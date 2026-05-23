@@ -1,6 +1,6 @@
 {
-  "name": "OmniBrowser Quantum-X",
-  "description": "Premium security-focused web browser with live DevTools overlay, deep AJAX request interceptors, CSS styling terminals, and multi-threaded parallel downloads.",
+  "name": "Chromium Titan-X",
+  "description": "Premium sovereign enterprise-grade mobile browser with live DevTools overlay.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
