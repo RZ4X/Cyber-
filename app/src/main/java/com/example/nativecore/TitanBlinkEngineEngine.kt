@@ -16,11 +16,22 @@ class TitanBlinkEngineEngine @JvmOverloads constructor(
 
     val devToolsBridge = DesktopDevToolsBridge(this)
     private val v8Runtime = V8RuntimeEnvironment()
+    val storage = TitanBrowserStorage(context)
+    
+    // Loaded extensions from storage
+    var activeExtensions = mutableListOf<TitanExtension>()
+    
+    // Custom progress and page listeners
+    var onPageLoadProgressChanged: ((Int) -> Unit)? = null
+    var onPageTitleOrUrlChanged: ((String, String) -> Unit)? = null
 
     init {
         clearCache(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
         
+        // Load initial extensions from persistent storage
+        reloadExtensionsFromStorage()
+
         settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -29,7 +40,7 @@ class TitanBlinkEngineEngine @JvmOverloads constructor(
             allowContentAccess = true
             mediaPlaybackRequiresUserGesture = false
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+            userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36 Kiwi/Next"
         }
         setLayerType(LAYER_TYPE_HARDWARE, null)
         establishNativeBlinkJniProxy()
@@ -37,14 +48,85 @@ class TitanBlinkEngineEngine @JvmOverloads constructor(
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 injectDesktopDevToolsCore()
+                onPageTitleOrUrlChanged?.invoke(title ?: "Loading...", url ?: "")
                 super.onPageStarted(view, url, favicon)
             }
+            
             override fun onPageFinished(view: WebView?, url: String?) {
                 injectDesktopDevToolsCore()
+                
+                // Save history to storage organically
+                val pageTitle = title ?: "Untitled Page"
+                val pageUrl = url ?: ""
+                if (pageUrl.isNotEmpty() && !pageUrl.startsWith("javascript:")) {
+                    storage.addHistoryEntry(TitanHistoryEntry(pageTitle, pageUrl, System.currentTimeMillis()))
+                }
+                
+                // Inject enabled extensions only
+                activeExtensions.forEach { ext ->
+                    if (ext.enabled) {
+                        evaluateJavascript(
+                            "(function() { try { ${ext.script} } catch(e) { console.error('Extension [${ext.name}] Error:', e); } })();", 
+                            null
+                        )
+                    }
+                }
+                
+                onPageTitleOrUrlChanged?.invoke(pageTitle, pageUrl)
                 v8Runtime.triggerAggressiveMemoryCleanup()
                 super.onPageFinished(view, url)
             }
         }
+
+        webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                onPageLoadProgressChanged?.invoke(newProgress)
+                super.onProgressChanged(view, newProgress)
+            }
+
+            override fun onReceivedTitle(view: WebView?, title: String?) {
+                onPageTitleOrUrlChanged?.invoke(title ?: "Untitled", url ?: "")
+                super.onReceivedTitle(view, title)
+            }
+
+            // High-fidelity standard JavaScript Alert Bridge to prevent WebView alert blockers
+            override fun onJsAlert(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
+                // Return false to let the system handle standard alert or we could build custom dialogs
+                return false
+            }
+        }
+    }
+
+    fun reloadExtensionsFromStorage() {
+        activeExtensions.clear()
+        activeExtensions.addAll(storage.getExtensions())
+    }
+
+    fun installManifestV2Extension(name: String, script: String) {
+        val newExt = TitanExtension(
+            id = "custom_${System.currentTimeMillis()}",
+            name = name,
+            script = script,
+            enabled = true
+        )
+        val currentList = storage.getExtensions().toMutableList()
+        currentList.add(newExt)
+        storage.saveExtensions(currentList)
+        reloadExtensionsFromStorage()
+    }
+
+    fun toggleExtension(id: String, enabled: Boolean) {
+        val currentList = storage.getExtensions().map {
+            if (it.id == id) it.copy(enabled = enabled) else it
+        }
+        storage.saveExtensions(currentList)
+        reloadExtensionsFromStorage()
+    }
+
+    fun deleteExtension(id: String) {
+        val currentList = storage.getExtensions().filter { it.id != id }
+        storage.saveExtensions(currentList)
+        reloadExtensionsFromStorage()
     }
 
     private fun establishNativeBlinkJniProxy() {

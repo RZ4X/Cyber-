@@ -1,6 +1,6 @@
 {
-  "name": "Chromium Titan-X",
-  "description": "Premium sovereign enterprise-grade mobile browser with live DevTools overlay.",
+  "name": "Kiwi Next Titan-X",
+  "description": "Premium sovereign enterprise-grade mobile browser with Kiwi-parity DevTools and Manifest V2 Extension Support.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
